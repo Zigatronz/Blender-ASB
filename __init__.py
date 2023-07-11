@@ -2,7 +2,7 @@
 bl_info = {
     "name": "Blender ASB",
     "author": "Zigatronz",
-    "version": (0, 2),
+    "version": (0, 2, 1),
     "blender": (2, 80, 0),
     "location": "View3D > Sidebar > Autosave Tab",
     "description": "Autosave with custom save path and timer",
@@ -46,16 +46,17 @@ def GetParentDir(path):
     return path.parent.absolute()
 
 # Perform autosave
-def autosave_handler(dummy):
+def autosave_handler():
     curSavePath = bpy.data.filepath
     preferences = bpy.context.preferences.addons[__name__].preferences
     file_path_format : str = preferences.file_path_format
     max_saves : int = preferences.max_saves
+    timerSeconds : int = preferences.timer * 60
 
     # Make sure that file_path_format is not empty
     if not file_path_format:
         print("autosave: autosave_handler: file_path_format can't be empty!")
-        return
+        return timerSeconds
 
     # Custom save path
     TempDir   = str( tempfile.gettempdir() )
@@ -85,7 +86,7 @@ def autosave_handler(dummy):
     # Make sure that the save_path is good
     if not os.path.exists(GetParentDir(GetParentDir(save_path))):
         print('autosave: autosave_handler: something wrong with file_path_format : "' + save_path + '"')
-        return
+        return timerSeconds
 
     # Do not overwrite and save if there's no save_path
     if save_path and not os.path.exists(save_path):
@@ -108,24 +109,26 @@ def autosave_handler(dummy):
             bpy.ops.wm.save_as_mainfile(filepath=save_path)
 
         # Remove oldest blend upon for max_saves
-        blend_files = {}
-        fixed_formats = {
-            "<TempDir>" : TempDir,
-            "<ParentDir>" : ParentDir,
-            "<Filename>" : Filename
-        }
-        # Get filename with modify time
-        for file in os.listdir(GetParentDir(save_path)):
-            filepath = os.path.join(GetParentDir(save_path), os.fsdecode(file))
-            if IsFilePathMatchFormat(filepath, file_path_format, fixed_formats):
-                blend_files[filepath] = time.ctime(os.path.getmtime(filepath))
-        # Keep removing till blend_files is less than max_saves
-        while len(blend_files) > max_saves:
-            # Sort oldest to "bottom"
-            blend_files = dict(sorted(blend_files.items(), key=lambda item: datetime.datetime.strptime(item[1], '%a %b %d %H:%M:%S %Y'), reverse=True))
-            # Delete oldest file
-            old_file = blend_files.popitem()
-            os.remove(str(old_file[0]))
+        if max_saves:
+            blend_files = {}
+            fixed_formats = {
+                "<TempDir>" : TempDir,
+                "<ParentDir>" : ParentDir,
+                "<Filename>" : Filename
+            }
+            # Get filename with modify time
+            for file in os.listdir(GetParentDir(save_path)):
+                filepath = os.path.join(GetParentDir(save_path), os.fsdecode(file))
+                if IsFilePathMatchFormat(filepath, file_path_format, fixed_formats):
+                    blend_files[filepath] = time.ctime(os.path.getmtime(filepath))
+            # Keep removing till blend_files is less than max_saves
+            while len(blend_files) > max_saves:
+                # Sort oldest to "bottom"
+                blend_files = dict(sorted(blend_files.items(), key=lambda item: datetime.datetime.strptime(item[1], '%a %b %d %H:%M:%S %Y'), reverse=True))
+                # Delete oldest file
+                old_file = blend_files.popitem()
+                os.remove(str(old_file[0]))
+    return timerSeconds
 
 
 # Panel class for the UI
@@ -154,7 +157,7 @@ class AUTOSAVE_DEMAND_operator(Operator):
 
     def execute(self, context):
         # Call save on demand
-        autosave_handler(None)
+        autosave_handler()
         self.report({'INFO'}, f"Saved")
 
         return {'FINISHED'}
@@ -211,9 +214,9 @@ class AUTOSAVE_Preferences(AddonPreferences):
     # Max saves property with an integer input
     max_saves: IntProperty(
         name="Max Saves",
-        description="Max save files",
+        description="Max save files\n 0 : no limit",
         default=5,
-        min=1,
+        min=0,
         soft_max=10
     )
 
@@ -233,19 +236,17 @@ classes = [
 ]
 
 # Turn on AutosaveTimer for startup purpose
-def AutosaveTimer_On(dummy):
+def AutosaveTimer_On():
     preferences = bpy.context.preferences.addons[__name__].preferences
     timer = preferences.timer
     AutosaveTimer(timer)
-    if bpy.app.timers.is_registered(AutosaveTimer_On):
-        bpy.app.timers.unregister(AutosaveTimer_On)
 
 def register():
     # Register all classes and add the autosave properties to the scene
     for cls in classes:
         bpy.utils.register_class(cls)
     # Run upon register
-    AutosaveTimer_On(None)
+    AutosaveTimer_On()
     
 def unregister():
     AutosaveTimer(0)
@@ -256,4 +257,4 @@ if __name__ == "__main__":
     register()
 
 # Run at blender start, give some times for blender to fully load addon
-bpy.app.timers.register(AutosaveTimer_On, first_interval=3)
+bpy.app.timers.register(AutosaveTimer_On, first_interval=3, persistent=True)
