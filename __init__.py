@@ -166,7 +166,7 @@ class AUTOSAVE_DEMAND_operator(Operator):
 def AutosaveTimer(timer):
     if timer > 0:
         if not bpy.app.timers.is_registered(autosave_handler):
-            bpy.app.timers.register(autosave_handler, first_interval=timer*60)
+            bpy.app.timers.register(autosave_handler, first_interval=timer*60, persistent=True)
     else:
         if bpy.app.timers.is_registered(autosave_handler):
             bpy.app.timers.unregister(autosave_handler)
